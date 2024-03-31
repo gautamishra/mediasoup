@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Black and White Filter on Background</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/body-pix"></script>
+</head>
+<body>
+    <h1>Inverted Black and White Filter on Background</h1>
+    <video id="webcam" width="640" height="480" autoplay style="display: none;"></video>
+    <canvas id="output" width="640" height="480"></canvas>
+    <script>
+        async function runSegmentation() {
+            const net = await bodyPix.load({
+                architecture: 'MobileNetV1',
+                outputStride: 16,
+                multiplier: 0.75,
+                quantBytes: 2
+            });
+
+            const webcamElement = document.getElementById('webcam');
+            const canvasElement = document.getElementById('output');
+            const ctx = canvasElement.getContext('2d');
+
+            // Get user's webcam
+            navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                webcamElement.srcObject = stream;
+                return new Promise(resolve => webcamElement.onloadedmetadata = resolve);
+            })
+            .then(() => {
+                canvasElement.width = webcamElement.videoWidth;
+                canvasElement.height = webcamElement.videoHeight;
+                return new Promise(resolve => webcamElement.onloadeddata = resolve);
+            })
+            .then(() => {
+                async function segmentPerson() {
+                    const segmentation = await net.segmentPerson(webcamElement);
+                    const mask = bodyPix.toMask(segmentation);
+                    const personMask = new ImageData(
+                        Uint8ClampedArray.from(mask.data),
+                        mask.width,
+                        mask.height
+                    );
+
+                    return personMask;
+                }
+
+                async function applyInvertedBlackAndWhiteFilter(personMask) {
+                    const offscreenCanvas = new OffscreenCanvas(personMask.width, personMask.height);
+                    const offscreenCtx = offscreenCanvas.getContext('2d');
+
+                    offscreenCtx.drawImage(webcamElement, 0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+                    const imageData = offscreenCtx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+                    // Apply inverted black and white filter only to the background
+                    for (let i = 0; i < imageData.data.length; i += 4) {
+                        // If the pixel does not correspond to the person (alpha value == 0), apply the filter
+                        if (personMask.data[i + 3] === 0) {
+                            // const average = (imageData.data[i] + imageData.data[i + 1] + imageData.data[i + 2]) / 3;
+                            imageData.data[i] = 0;
+                            imageData.data[i + 1] = 0;
+                            imageData.data[i + 2] = 0;
+                        }
+                    }
+
+                    return imageData;
+                }
+
+                async function render() {
+                    const personMask = await segmentPerson();
+                    const invertedBlackAndWhiteImageData = await applyInvertedBlackAndWhiteFilter(personMask);
+
+                    // Draw the original webcam stream onto the canvas
+                    ctx.drawImage(webcamElement, 0, 0, canvasElement.width, canvasElement.height);
+
+                    // Draw the filtered background on top of the original stream
+                    ctx.putImageData(invertedBlackAndWhiteImageData, 0, 0);
+
+                    requestAnimationFrame(render);
+                }
+
+                render();
+            })
+            .catch(error => {
+                console.error('Error accessing webcam:', error);
+            });
+        }
+
+        // Start the segmentation process
+        runSegmentation();
+    </script>
+</body>
+</html>
