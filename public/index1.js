@@ -71,9 +71,10 @@ const streamSuccess = async (stream) => {
 
 let device 
 let producerTransport
+let consumerTransport
 let producer
 let consumer
-let consumerTransport
+let  rtpCapabilities;
 
 const createDevice = async () => {
     try {
@@ -92,7 +93,7 @@ const createDevice = async () => {
     }
 }
 
-let  rtpCapabilities;
+
 
 const getRtpCapabilities = () => {
     socket.emit('getRtpCapabilities', (data) => {
